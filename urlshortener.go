@@ -1,37 +1,65 @@
 package main
 
 import (
-	"bufio"
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"net/url"
-	"os"
-	"strings"
+
+	"github.com/gin-gonic/gin"
 )
+
+var urlMap = make(map[string]string)
 
 func main() {
 
-	reader := bufio.NewReader(os.Stdin)
-	urlInput, _ := reader.ReadString('\n')
-	urlInput = strings.TrimSpace(urlInput)
-
-	urlMap := make(map[string]string)
-
-	if isValidUrl(urlInput) {
-		random_bytes := make([]byte, 32)
-
-		_, err := rand.Read(random_bytes)
-		if err != nil {
-			panic(err)
+	restEngine := gin.Default()
+	restEngine.POST("/urlShorten", func(ctx *gin.Context) {
+		var req struct {
+			URL string `json:"url"`
 		}
 
-		shortUrl := base64.URLEncoding.EncodeToString(random_bytes)[:7]
-		urlMap[shortUrl] = urlInput
+		err := ctx.BindJSON(&req)
+		if err != nil {
+			ctx.JSON(400, gin.H{"Error": "Invalid Request"})
+			return
+		}
 
-		fmt.Println(shortUrl + " -> " + urlInput)
+		if !isValidUrl(req.URL) {
+			ctx.JSON(400, gin.H{"Error": "Invalid Url"})
+			return
+		}
+
+		shortUrl := getShortenedUrl()
+		urlMap[shortUrl] = req.URL
+		ctx.JSON(200, gin.H{"Shortened URL": "http://localhost:8080/" + shortUrl})
+	})
+
+	restEngine.GET("/:code", func(ctx *gin.Context) {
+		code := ctx.Param("code")
+
+		longUrl, exists := urlMap[code]
+		if !exists {
+			ctx.JSON(404, gin.H{"Error": "URL Not Found"})
+			return
+		}
+
+		ctx.Redirect(302, longUrl)
+	})
+
+	restEngine.Run(":8080")
+}
+
+func getShortenedUrl() string {
+	random_bytes := make([]byte, 32)
+
+	_, err := rand.Read(random_bytes)
+	if err != nil {
+		panic(err)
 	}
 
+	shortUrl := base64.URLEncoding.EncodeToString(random_bytes)[:7]
+
+	return shortUrl
 }
 
 func isValidUrl(urlInput string) bool {
